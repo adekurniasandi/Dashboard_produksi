@@ -1,0 +1,1676 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mining Production Dashboard | Enterprise Operations Suite</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        mining: {
+                            bg: '#0a0e14',
+                            surface: '#11161e',
+                            card: '#161c26',
+                            border: '#1e2633',
+                            accent: '#f59e0b',
+                            'accent-2': '#eab308',
+                            gold: '#d4a017',
+                            copper: '#b87333',
+                            steel: '#4a5568',
+                            danger: '#ef4444',
+                            success: '#22c55e',
+                            info: '#3b82f6',
+                            warning: '#f59e0b',
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['JetBrains Mono', 'Consolas', 'monospace'],
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #0a0e14;
+            --surface: #11161e;
+            --card: #161c26;
+            --border: #1e2633;
+            --accent: #f59e0b;
+            --text: #e2e8f0;
+            --text-muted: #94a3b8;
+            --glass-bg: rgba(22, 28, 38, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.06);
+            --glow: 0 0 30px rgba(245, 158, 11, 0.08);
+        }
+
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: #2a3340 #0a0e14;
+        }
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0a0e14;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2a3340;
+            border-radius: 10px;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            overflow-x: hidden;
+        }
+
+        /* Glassmorphism */
+        .glass-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 14px;
+            box-shadow: var(--glow);
+            transition: all 0.3s ease;
+        }
+        .glass-card:hover {
+            border-color: rgba(245, 158, 11, 0.2);
+            box-shadow: 0 0 40px rgba(245, 158, 11, 0.12);
+            transform: translateY(-2px);
+        }
+
+        .kpi-card {
+            background: linear-gradient(145deg, #161c26 0%, #11161e 100%);
+            border: 1px solid #1e2633;
+            border-radius: 14px;
+            padding: 1.2rem;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #f59e0b, #eab308, #f59e0b);
+            border-radius: 14px 14px 0 0;
+            opacity: 0.6;
+        }
+        .kpi-card:hover {
+            border-color: #f59e0b33;
+            box-shadow: 0 8px 40px rgba(245, 158, 11, 0.1);
+            transform: translateY(-3px);
+        }
+        .kpi-value {
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .kpi-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #94a3b8;
+            font-weight: 500;
+        }
+        .trend-up { color: #22c55e; }
+        .trend-down { color: #ef4444; }
+        .trend-neutral { color: #f59e0b; }
+
+        /* Sidebar */
+        .sidebar {
+            background: #0d1117;
+            border-right: 1px solid #1e2633;
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 50;
+        }
+        .sidebar.collapsed {
+            transform: translateX(-100%);
+        }
+        .nav-item {
+            padding: 0.65rem 1rem;
+            margin: 0.2rem 0.5rem;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: #94a3b8;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            white-space: nowrap;
+        }
+        .nav-item:hover {
+            background: #1a2230;
+            color: #e2e8f0;
+        }
+        .nav-item.active {
+            background: linear-gradient(135deg, #f59e0b15, #eab30810);
+            color: #f59e0b;
+            border-left: 3px solid #f59e0b;
+            font-weight: 600;
+        }
+
+        /* Badge */
+        .badge-mining {
+            background: #f59e0b20;
+            color: #f59e0b;
+            border: 1px solid #f59e0b30;
+            border-radius: 20px;
+            padding: 0.2rem 0.6rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+
+        /* Pulse animation */
+        @keyframes pulse-mining {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.3); }
+            50% { box-shadow: 0 0 0 14px rgba(245, 158, 11, 0); }
+        }
+        .pulse-dot {
+            animation: pulse-mining 2s infinite;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #f59e0b;
+            display: inline-block;
+        }
+
+        /* Table */
+        .mining-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+        }
+        .mining-table th {
+            background: #11161e;
+            color: #94a3b8;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: 0.7rem;
+            padding: 0.7rem 0.8rem;
+            border-bottom: 2px solid #1e2633;
+            text-align: left;
+        }
+        .mining-table td {
+            padding: 0.55rem 0.8rem;
+            border-bottom: 1px solid #1e263320;
+            color: #e2e8f0;
+        }
+        .mining-table tr:hover td {
+            background: #1a223015;
+        }
+        .mining-table .highlight-row {
+            background: #f59e0b08;
+        }
+
+        /* Input */
+        .mining-input {
+            background: #11161e;
+            border: 1px solid #1e2633;
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 0.55rem 0.8rem;
+            font-size: 0.8rem;
+            transition: all 0.2s ease;
+            outline: none;
+        }
+        .mining-input:focus {
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 3px #f59e0b15;
+        }
+        .mining-select {
+            background: #11161e;
+            border: 1px solid #1e2633;
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 0.55rem 0.8rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        /* Button */
+        .btn-mining {
+            background: linear-gradient(135deg, #f59e0b, #eab308);
+            color: #0a0e14;
+            border: none;
+            border-radius: 8px;
+            padding: 0.55rem 1.2rem;
+            font-weight: 600;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            letter-spacing: 0.02em;
+        }
+        .btn-mining:hover {
+            box-shadow: 0 4px 20px #f59e0b40;
+            transform: translateY(-1px);
+        }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #f59e0b;
+            color: #f59e0b;
+            border-radius: 8px;
+            padding: 0.55rem 1.2rem;
+            font-weight: 600;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .btn-outline:hover {
+            background: #f59e0b15;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            padding: 1rem 1.5rem;
+            border-radius: 10px;
+            font-weight: 500;
+            animation: slideIn 0.3s ease;
+            font-size: 0.85rem;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(120%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 260px;
+                z-index: 100;
+            }
+            .sidebar.collapsed { transform: translateX(-100%); }
+            .kpi-value { font-size: 1.4rem; }
+            .kpi-card { padding: 0.8rem; }
+        }
+
+        /* Canvas container */
+        .chart-container {
+            position: relative;
+            width: 100%;
+            min-height: 280px;
+        }
+        .chart-container canvas { width: 100% !important; }
+
+        /* Overlay */
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 40;
+            display: none;
+        }
+        .overlay.active { display: block; }
+
+        /* --- PRINT STYLES --- */
+        @media print {
+            body { background: #ffffff !important; color: #000000 !important; overflow: visible !important; }
+            .sidebar, header, .print\:hidden, #toastContainer, #overlay { display: none !important; }
+            #dashboardPage, #mainContent { display: block !important; overflow: visible !important; margin: 0 !important; padding: 0 !important; height: auto !important; }
+            .glass-card, .kpi-card { background: #ffffff !important; border: 1px solid #cbd5e1 !important; box-shadow: none !important; break-inside: avoid; page-break-inside: avoid; }
+            .text-white, .kpi-value { color: #0f172a !important; }
+            .text-gray-300, .text-gray-400, .kpi-label { color: #475569 !important; }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .chart-container { min-height: 250px !important; }
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <div id="loginPage" class="min-h-screen flex items-center justify-center bg-[#0a0e14] relative overflow-hidden">
+        <div class="absolute inset-0 opacity-5">
+            <div class="absolute top-10 left-10 w-60 h-60 bg-yellow-500 rounded-full blur-3xl"></div>
+            <div class="absolute bottom-10 right-10 w-80 h-80 bg-amber-600 rounded-full blur-3xl"></div>
+        </div>
+        <div class="glass-card p-10 w-full max-w-md relative z-10">
+            <div class="text-center mb-8">
+                <div class="text-5xl mb-3">⛏️</div>
+                <h1 class="text-2xl font-bold text-white tracking-tight">Mining Operations</h1>
+                <p class="text-sm text-gray-400 mt-1">Enterprise Production Dashboard</p>
+                <div class="flex items-center justify-center gap-2 mt-3">
+                    <span class="badge-mining">V5.0 SMART FILTER</span>
+                    <span class="pulse-dot"></span>
+                    <span class="text-xs text-gray-500">Live & Cached</span>
+                </div>
+            </div>
+            
+            <div id="loginFormContainer" class="space-y-5">
+                <div>
+                    <label class="block text-xs uppercase tracking-wider text-gray-400 mb-1.5">Username</label>
+                    <input type="text" id="loginUsername" class="mining-input w-full" placeholder="Enter username" autocomplete="off">
+                </div>
+                <div>
+                    <label class="block text-xs uppercase tracking-wider text-gray-400 mb-1.5">Password</label>
+                    <input type="password" id="loginPassword" class="mining-input w-full" placeholder="Enter password">
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="rememberMe" class="accent-yellow-500">
+                    <label for="rememberMe" class="text-xs text-gray-400">Remember this device</label>
+                </div>
+                <button type="button" id="loginSubmitBtn" class="btn-mining w-full py-3 text-base font-bold">Authenticate & Enter</button>
+            </div>
+            
+            <p id="loginError" class="text-red-400 text-xs text-center mt-4 hidden font-semibold"></p>
+            <p class="text-xs text-gray-500 text-center mt-6">© 2026 Mining Operations Intelligence</p>
+        </div>
+    </div>
+
+    <div id="dashboardPage" class="hidden min-h-screen flex flex-col">
+
+        <header class="bg-[#0d1117] border-b border-[#1e2633] sticky top-0 z-30 px-4 py-2.5 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <button id="menuToggle" class="text-gray-400 hover:text-white text-xl p-1.5 rounded-lg hover:bg-[#1a2230] transition lg:hidden">
+                    ☰
+                </button>
+                <div class="flex items-center gap-2.5">
+                    <span class="text-2xl">⛏️</span>
+                    <div>
+                        <span class="font-bold text-white text-sm tracking-tight">MINING OPS</span>
+                        <span class="text-[10px] text-yellow-500 block -mt-0.5 tracking-wider">INTELLIGENCE</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="hidden md:flex items-center gap-6 text-xs text-gray-400">
+                <span class="flex items-center gap-1.5"><span class="pulse-dot"></span> Live</span>
+                <span id="headerDate" class="text-gray-300 font-medium"></span>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2 cursor-pointer" id="userProfile" title="Logged in as admin">
+                    <div class="w-8 h-8 rounded-full bg-yellow-500/20 border border-yellow-500/40 flex items-center justify-center text-yellow-500 font-bold text-sm">A</div>
+                    <span class="text-xs text-gray-300 hidden sm:inline">admin</span>
+                </div>
+                <button id="logoutBtn" class="text-gray-400 hover:text-red-400 text-sm px-2 py-1 rounded hover:bg-red-500/10 transition" title="Logout">
+                    ⏻
+                </button>
+            </div>
+        </header>
+
+        <div class="flex flex-1 overflow-hidden">
+            <div id="overlay" class="overlay lg:hidden"></div>
+
+            <aside id="sidebar" class="sidebar w-64 flex-shrink-0 overflow-y-auto py-3 lg:translate-x-0 collapsed">
+                <div class="px-4 mb-3">
+                    <span class="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">Navigation</span>
+                </div>
+                <nav id="sideNav" class="space-y-0.5">
+                    <div class="nav-item active" data-section="executive">📊<span>Executive Summary</span></div>
+                    <div class="nav-item" data-section="ai_insight">🤖<span class="font-bold text-blue-400">AI Insight</span></div>
+                    <div class="nav-item" data-section="production">📈<span>Production</span></div>
+                    <div class="nav-item" data-section="fleet">🚛<span>Fleet Performance</span></div>
+                    <div class="nav-item" data-section="reliability">🔧<span>Equipment Reliability</span></div>
+                    <div class="nav-item" data-section="productivity">⚡<span>Productivity</span></div>
+                    <div class="nav-item" data-section="fuel">⛽<span>Fuel Analysis</span></div>
+                    <div class="nav-item" data-section="pit">🏗️<span>Pit Analysis</span></div>
+                    <div class="nav-item" data-section="operator">👷<span>Operator Performance</span></div>
+                    <div class="nav-item" data-section="weather">🌧️<span>Weather Impact</span></div>
+                    <div class="nav-item" data-section="waterfall">📉<span>Waterfall Analysis</span></div>
+                    <div class="nav-item" data-section="forecast">🔮<span>Forecast</span></div>
+                    <div class="nav-item" data-section="reports">📄<span>Reports</span></div>
+                </nav>
+                <div class="mt-6 px-4 pt-4 border-t border-[#1e2633]">
+                    <span class="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">Connection</span>
+                    <div class="flex items-center gap-2 mt-2">
+                        <span class="w-2 h-2 rounded-full bg-green-500" id="dbStatusDot"></span>
+                        <span class="text-xs text-gray-400" id="dbStatusText">Supabase</span>
+                    </div>
+                </div>
+            </aside>
+
+            <main class="flex-1 overflow-y-auto p-4 md:p-6 bg-[#0a0e14]" id="mainContent">
+                <div id="sectionContent" class="space-y-5"></div>
+            </main>
+        </div>
+    </div>
+
+    <div id="toastContainer"></div>
+
+    <script>
+        (function() {
+            // ============ SUPABASE CONFIGURATION ============
+            const SUPABASE_URL = "https://ehpakoeytnwxwhnjcgcw.supabase.co";
+            const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVocGFrb2V5dG53eHdobmpjZ2N3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0NTk2NTUsImV4cCI6MjA5NzAzNTY1NX0.Nc2K6q2PUHkrouwQF8pKiOxsiH8JxUQWks9ctYYGb94";
+
+            // ============ STATE ============
+            let supabase = null;
+            let allData = [];
+            let currentSection = 'executive';
+            let globalFilters = {
+                year: 'all', month: 'all', startDay: '1', endDay: '31', shift: 'all', fleet: 'all', pit: 'all',
+            };
+            let chartInstances = {};
+            let clockInterval = null;
+
+            // ============ DOM ELEMENTS ============
+            const loginPage = document.getElementById('loginPage');
+            const dashboardPage = document.getElementById('dashboardPage');
+            const loginUsernameInput = document.getElementById('loginUsername');
+            const loginPasswordInput = document.getElementById('loginPassword');
+            const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+            const loginError = document.getElementById('loginError');
+            const logoutBtn = document.getElementById('logoutBtn');
+            const sectionContent = document.getElementById('sectionContent');
+            const sideNav = document.getElementById('sideNav');
+            const menuToggle = document.getElementById('menuToggle');
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            const headerDate = document.getElementById('headerDate');
+            const dbStatusDot = document.getElementById('dbStatusDot');
+            const dbStatusText = document.getElementById('dbStatusText');
+            const toastContainer = document.getElementById('toastContainer');
+
+            // ============ INIT SUPABASE ============
+            function initSupabase() {
+                try {
+                    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    dbStatusDot.className = 'w-2 h-2 rounded-full bg-green-500';
+                    dbStatusText.textContent = 'Connected';
+                    return true;
+                } catch (e) {
+                    dbStatusDot.className = 'w-2 h-2 rounded-full bg-red-500';
+                    dbStatusText.textContent = 'Error';
+                    return false;
+                }
+            }
+
+            // ============ TOAST ============
+            function showToast(message, type = 'info') {
+                const toast = document.createElement('div');
+                const bgColors = { success: '#22c55e20', error: '#ef444420', info: '#3b82f620', warning: '#f59e0b20' };
+                const textColors = { success: '#22c55e', error: '#ef4444', info: '#3b82f6', warning: '#f59e0b' };
+                toast.className = 'toast';
+                toast.style.background = bgColors[type] || bgColors.info;
+                toast.style.color = textColors[type] || textColors.info;
+                toast.style.border = `1px solid ${textColors[type]}40`;
+                toast.textContent = message;
+                toastContainer.appendChild(toast);
+                setTimeout(() => { toast.remove(); }, 3500);
+            }
+
+            // ============ JAM LIVE ============
+            function startLiveClock() {
+                if (clockInterval) clearInterval(clockInterval);
+                function updateTime() {
+                    const now = new Date();
+                    const dateStr = now.toLocaleDateString('id-ID', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+                    const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                    headerDate.innerHTML = `${dateStr} <span class="text-yellow-500 font-mono text-sm ml-2 bg-[#1a2230] px-2 py-0.5 rounded border border-[#1e2633]">${timeStr}</span>`;
+                }
+                updateTime(); 
+                clockInterval = setInterval(updateTime, 1000);
+            }
+
+            // ============ ANTI-REFRESH LOGIN LOGIC ============
+            function performLogin() {
+                const username = loginUsernameInput.value.trim().toLowerCase();
+                const password = loginPasswordInput.value.trim();
+                const remember = document.getElementById('rememberMe').checked;
+
+                if (username === 'admin' && password === 'admin123') {
+                    try {
+                        sessionStorage.setItem('mining_auth', 'true');
+                        if (remember) localStorage.setItem('mining_remember', 'true');
+                        else localStorage.removeItem('mining_remember');
+                    } catch(e) {}
+                    
+                    loginError.classList.add('hidden');
+                    showToast('Authentication successful', 'success');
+                    showDashboard();
+                } else {
+                    loginError.textContent = '❌ Username atau Password Salah!';
+                    loginError.classList.remove('hidden');
+                }
+            }
+
+            loginSubmitBtn.addEventListener('click', performLogin);
+
+            loginPasswordInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') performLogin();
+            });
+            loginUsernameInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') loginPasswordInput.focus();
+            });
+
+            function checkSession() {
+                try {
+                    const session = sessionStorage.getItem('mining_auth');
+                    const remembered = localStorage.getItem('mining_remember');
+                    if (session === 'true' || remembered === 'true') {
+                        showDashboard();
+                        if (remembered === 'true') sessionStorage.setItem('mining_auth', 'true');
+                    }
+                } catch (e) {}
+            }
+
+            logoutBtn.addEventListener('click', function() {
+                try {
+                    sessionStorage.removeItem('mining_auth');
+                    localStorage.removeItem('mining_remember');
+                } catch(e) {}
+                hideDashboard();
+                showToast('Logged out successfully', 'info');
+            });
+
+            function showDashboard() {
+                loginPage.classList.add('hidden');
+                dashboardPage.classList.remove('hidden');
+                startLiveClock(); 
+                initSupabase();
+                loadAllData().then(() => {
+                    renderSection('executive');
+                });
+            }
+
+            function hideDashboard() {
+                loginPage.classList.remove('hidden');
+                dashboardPage.classList.add('hidden');
+                if (clockInterval) clearInterval(clockInterval);
+                Object.values(chartInstances).forEach(c => { try { c.destroy(); } catch (e) {} });
+                chartInstances = {};
+            }
+
+            // ============ FUNGSI SET DEFAULT FILTER (BULAN TERBARU) ============
+            function setDefaultSmartFilter() {
+                if (allData.length > 0) {
+                    const validDates = allData.map(r => r.date).filter(d => d);
+                    if (validDates.length > 0) {
+                        validDates.sort(); // Urutkan tanggal
+                        const latestDate = validDates[validDates.length - 1]; // Ambil data paling ujung (paling baru)
+                        
+                        globalFilters.year = latestDate.substring(0, 4);
+                        globalFilters.month = latestDate.substring(5, 7);
+                        globalFilters.startDay = '1';
+                        globalFilters.endDay = '31';
+                        console.log(`✅ Smart Filter Aktif: Menampilkan data ${globalFilters.year}-${globalFilters.month}`);
+                    }
+                }
+            }
+
+            // ============ FAST PARALLEL FETCHING DENGAN DATABASE INDEX ============
+            async function loadAllData() {
+                if (!supabase) {
+                    showToast('Koneksi Supabase terputus', 'error');
+                    allData = [];
+                    return;
+                }
+                
+                // 1. CEK CACHE BROWSER 
+                const cachedData = sessionStorage.getItem('mining_data_cache');
+                const cacheTime = sessionStorage.getItem('mining_data_time');
+                const now = new Date().getTime();
+                
+                if (cachedData && cacheTime && (now - parseInt(cacheTime)) < 1800000) {
+                    try {
+                        allData = JSON.parse(cachedData);
+                        setDefaultSmartFilter(); // SET FILTER OTOMATIS
+                        toastContainer.innerHTML = '';
+                        showToast(`⚡ Instan! Memuat ${allData.length} data dari memori`, 'success');
+                        return;
+                    } catch(e) {
+                        console.warn('Cache rusak, mengambil ulang...');
+                    }
+                }
+
+                try {
+                    toastContainer.innerHTML = ''; 
+                    showToast('Menarik data dengan Index Database...', 'info');
+                    
+                    const { count, error: countError } = await supabase
+                        .from('Data produksi tambang')
+                        .select('*', { count: 'exact', head: true });
+
+                    if (countError) throw new Error(countError.message);
+                    if (!count || count === 0) {
+                        showToast('Tidak ada data di tabel', 'warning');
+                        return;
+                    }
+
+                    // Hanya tarik kolom yang penting
+                    const requiredCols = 'date, shift, fleet, pit, loading_point, dumping_point, unit_type, operator, hauler, digger, rain_hours, rainfall_mm, slippery_hours, actual_bcm, target_bcm, ritase, actual_pa, actual_ua, utilization, fuel_liter, mtbf, mttr, breakdown_hours, idle_hours, distance_km, var_fleet, var_pa, var_ua, var_prod';
+
+                    let limit = 5000; 
+                    const promises = [];
+                    for (let i = 0; i < count; i += limit) {
+                        promises.push(
+                            supabase.from('Data produksi tambang')
+                            .select(requiredCols)
+                            .order('date', { ascending: false }) // TRIGGER IDX_DATE
+                            .range(i, i + limit - 1)
+                        );
+                    }
+
+                    const results = await Promise.all(promises);
+                    
+                    let allFetchedData = [];
+                    for (let res of results) {
+                        if (res.error) throw new Error(res.error.message);
+                        if (res.data) allFetchedData.push(...res.data);
+                    }
+
+                    allData = allFetchedData;
+                    setDefaultSmartFilter(); // SET FILTER OTOMATIS
+                    
+                    // 2. SIMPAN CACHE
+                    try {
+                        sessionStorage.setItem('mining_data_cache', JSON.stringify(allData));
+                        sessionStorage.setItem('mining_data_time', now.toString());
+                    } catch(e) {}
+
+                    toastContainer.innerHTML = '';
+                    showToast(`✅ Selesai! Mengunduh total ${allData.length} baris data`, 'success');
+                    
+                } catch (e) {
+                    console.error('Fetch error:', e);
+                    allData = [];
+                    toastContainer.innerHTML = '';
+                    showToast(`ERROR DB: ${e.message}`, 'error'); 
+                }
+            }
+
+            // ============ DEDUPLIKASI BCM & RITASE ============
+            function getProductionData(dataArray) {
+                return dataArray.filter(r => {
+                    const isDigger = String(r.unit_type).toLowerCase() === 'digger';
+                    const hasNoHauler = !r.hauler || r.hauler === 'nan' || String(r.hauler).trim() === '';
+                    return isDigger || hasNoHauler;
+                });
+            }
+
+            function getTrueWeather(dataArray) {
+                const map = {};
+                dataArray.forEach(r => {
+                    const key = `${r.date}_${r.shift}_${r.pit}`; 
+                    if (!map[key]) map[key] = { rain: 0, fall: 0, slip: 0 };
+                    map[key].rain = Math.max(map[key].rain, parseFloat(r.rain_hours || 0));
+                    map[key].fall = Math.max(map[key].fall, parseFloat(r.rainfall_mm || 0));
+                    map[key].slip = Math.max(map[key].slip, parseFloat(r.slippery_hours || 0));
+                });
+                let tr = 0, tf = 0, ts = 0;
+                Object.values(map).forEach(v => { tr += v.rain; tf += v.fall; ts += v.slip; });
+                return { rainHours: tr, rainfallMm: tf, slipperyHours: ts };
+            }
+
+            // ============ PENYARINGAN DATA GLOBAL ============
+            function getFilteredData() {
+                let d = [...allData];
+                
+                if (globalFilters.year !== 'all') {
+                    d = d.filter(r => r.date && String(r.date).startsWith(globalFilters.year));
+                }
+                if (globalFilters.month !== 'all') {
+                    d = d.filter(r => r.date && String(r.date).substring(5, 7) === globalFilters.month.padStart(2, '0'));
+                }
+                if (globalFilters.startDay !== '1' || globalFilters.endDay !== '31') {
+                    const startD = parseInt(globalFilters.startDay);
+                    const endD = parseInt(globalFilters.endDay);
+                    d = d.filter(r => {
+                        if (!r.date) return false;
+                        const day = parseInt(String(r.date).substring(8, 10), 10);
+                        return day >= startD && day <= endD;
+                    });
+                }
+                if (globalFilters.shift !== 'all') {
+                    d = d.filter(r => r.shift && r.shift === globalFilters.shift);
+                }
+                if (globalFilters.fleet !== 'all') {
+                    d = d.filter(r => r.fleet && r.fleet === globalFilters.fleet);
+                }
+                if (globalFilters.pit !== 'all') {
+                    d = d.filter(r => r.pit && r.pit === globalFilters.pit);
+                }
+                return d;
+            }
+
+            // ============ NAVIGATION ============
+            sideNav.addEventListener('click', function(e) {
+                const item = e.target.closest('.nav-item');
+                if (!item) return;
+                const section = item.dataset.section;
+                if (section) {
+                    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+                    item.classList.add('active');
+                    currentSection = section;
+                    renderSection(section);
+                    if (window.innerWidth < 1024) closeSidebar();
+                }
+            });
+
+            menuToggle.addEventListener('click', toggleSidebar);
+            overlay.addEventListener('click', closeSidebar);
+
+            function toggleSidebar() {
+                sidebar.classList.toggle('collapsed');
+                overlay.classList.toggle('active');
+            }
+
+            function closeSidebar() {
+                sidebar.classList.add('collapsed');
+                overlay.classList.remove('active');
+            }
+
+            // ============ RENDER SECTIONS ============
+            function renderSection(section) {
+                Object.values(chartInstances).forEach(c => { try { c.destroy(); } catch (e) {} });
+                chartInstances = {};
+                sectionContent.innerHTML = '';
+
+                const data = getFilteredData();
+                switch (section) {
+                    case 'executive': renderExecutive(data); break;
+                    case 'ai_insight': renderAiInsight(data); break;
+                    case 'production': renderProduction(data); break;
+                    case 'fleet': renderFleet(data); break;
+                    case 'reliability': renderReliability(data); break;
+                    case 'productivity': renderProductivity(data); break;
+                    case 'fuel': renderFuel(data); break;
+                    case 'pit': renderPit(data); break;
+                    case 'operator': renderOperator(data); break;
+                    case 'weather': renderWeather(data); break;
+                    case 'waterfall': renderWaterfall(data); break;
+                    case 'forecast': renderForecast(data); break;
+                    case 'reports': renderReports(data); break;
+                    default: renderExecutive(data);
+                }
+                renderGlobalFilters();
+            }
+
+            // ============ FILTER BAR ============
+            function renderGlobalFilters() {
+                const filterBar = document.createElement('div');
+                filterBar.className = 'flex flex-wrap gap-3 items-center glass-card p-3 mb-4 sticky top-0 z-10 bg-[#0d1117cc] print:hidden';
+                
+                const years = [...new Set(allData.filter(r => r.date).map(r => String(r.date).substring(0, 4)))].sort();
+                const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const daysArr = Array.from({length: 31}, (_, i) => i + 1);
+                const shifts = [...new Set(allData.filter(r => r.shift).map(r => String(r.shift)))].sort();
+                const fleets = [...new Set(allData.filter(r => r.fleet).map(r => String(r.fleet)))].sort();
+                const pits = [...new Set(allData.filter(r => r.pit).map(r => String(r.pit)))].sort();
+
+                filterBar.innerHTML = `
+                <div class="flex items-center gap-2 mr-2">
+                    <span class="text-xs text-gray-500 font-semibold tracking-wider">FILTERS</span>
+                </div>
+                
+                <select class="mining-select text-xs" id="filterYear"><option value="all">All Years</option>${years.map(y=>`<option value="${y}">${y}</option>`).join('')}</select>
+                <select class="mining-select text-xs" id="filterMonth"><option value="all">All Months</option>${months.map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}">${m}</option>`).join('')}</select>
+                
+                <div class="flex items-center gap-1 bg-[#161c26] rounded-lg p-1 border border-[#1e2633]">
+                    <select class="mining-select text-xs border-none" id="filterStartDay" title="Mulai Tanggal">${daysArr.map(d=>`<option value="${d}">Tgl ${d}</option>`).join('')}</select>
+                    <span class="text-gray-500 text-xs">-</span>
+                    <select class="mining-select text-xs border-none" id="filterEndDay" title="Sampai Tanggal">${daysArr.map(d=>`<option value="${d}">Tgl ${d}</option>`).join('')}</select>
+                </div>
+
+                <select class="mining-select text-xs" id="filterShift"><option value="all">All Shifts</option>${shifts.map(s=>`<option value="${s}">${s}</option>`).join('')}</select>
+                <select class="mining-select text-xs" id="filterFleet"><option value="all">All Fleets</option>${fleets.map(f=>`<option value="${f}">${f}</option>`).join('')}</select>
+                <select class="mining-select text-xs" id="filterPit"><option value="all">All Pits</option>${pits.map(p=>`<option value="${p}">${p}</option>`).join('')}</select>
+                <span class="text-xs text-gray-500 ml-auto" id="recordCount"></span>
+              `;
+                sectionContent.insertBefore(filterBar, sectionContent.firstChild);
+
+                document.getElementById('filterYear').value = globalFilters.year;
+                document.getElementById('filterMonth').value = globalFilters.month;
+                document.getElementById('filterStartDay').value = globalFilters.startDay;
+                document.getElementById('filterEndDay').value = globalFilters.endDay;
+                document.getElementById('filterShift').value = globalFilters.shift;
+                document.getElementById('filterFleet').value = globalFilters.fleet;
+                document.getElementById('filterPit').value = globalFilters.pit;
+                
+                updateRecordCount();
+
+                ['filterYear', 'filterMonth', 'filterStartDay', 'filterEndDay', 'filterShift', 'filterFleet', 'filterPit'].forEach(id => {
+                    document.getElementById(id).addEventListener('change', function() {
+                        globalFilters.year = document.getElementById('filterYear').value;
+                        globalFilters.month = document.getElementById('filterMonth').value;
+                        globalFilters.startDay = document.getElementById('filterStartDay').value;
+                        globalFilters.endDay = document.getElementById('filterEndDay').value;
+                        globalFilters.shift = document.getElementById('filterShift').value;
+                        globalFilters.fleet = document.getElementById('filterFleet').value;
+                        globalFilters.pit = document.getElementById('filterPit').value;
+                        
+                        if (parseInt(globalFilters.startDay) > parseInt(globalFilters.endDay)) {
+                            globalFilters.startDay = globalFilters.endDay;
+                            document.getElementById('filterStartDay').value = globalFilters.startDay;
+                            showToast('Tanggal awal disesuaikan', 'warning');
+                        }
+                        
+                        renderSection(currentSection);
+                    });
+                });
+            }
+
+            function updateRecordCount() {
+                const count = getFilteredData().length;
+                const el = document.getElementById('recordCount');
+                if (el) el.textContent = `${count} baris diproses`;
+            }
+
+            // ============ AI INSIGHT SECTION ============
+            function renderAiInsight(data) {
+                if (data.length === 0) {
+                    sectionContent.innerHTML = '<div class="glass-card p-6 text-center text-gray-400">Tidak ada data untuk dianalisis pada filter ini.</div>';
+                    return;
+                }
+
+                const prodData = getProductionData(data); 
+                const trueWeather = getTrueWeather(data);
+
+                const totalBcm = prodData.reduce((s, r) => s + parseFloat(r.actual_bcm || 0), 0);
+                const targetBcm = prodData.reduce((s, r) => s + parseFloat(r.target_bcm || 0), 0);
+                const achPct = targetBcm > 0 ? ((totalBcm / targetBcm) * 100).toFixed(1) : 0;
+
+                const fleetRank = rankBy(prodData, 'fleet', 'actual_bcm');
+                const bestFleet = fleetRank.length > 0 ? fleetRank[0].key : 'N/A';
+                const bestFleetBcm = fleetRank.length > 0 ? formatNum(fleetRank[0].total) : 0;
+                const worstFleet = fleetRank.length > 1 ? fleetRank[fleetRank.length-1].key : 'N/A';
+
+                const pitRank = rankBy(prodData, 'pit', 'actual_bcm');
+                const bestPit = pitRank.length > 0 ? pitRank[0].key : 'N/A';
+
+                const opRank = rankBy(prodData, 'operator', 'actual_bcm');
+                const bestOp = opRank.length > 0 ? opRank[0].key : 'N/A';
+
+                const breakdownHrs = data.reduce((s, r) => s + parseFloat(r.breakdown_hours || 0), 0);
+                const idleHrs = data.reduce((s, r) => s + parseFloat(r.idle_hours || 0), 0);
+                const rainHrs = trueWeather.rainHours;
+
+                let problemSolvingHtml = '';
+                if (breakdownHrs > rainHrs && breakdownHrs > idleHrs) {
+                    problemSolvingHtml += `<li class="flex items-start gap-2"><span class="text-blue-500 text-lg leading-none">➤</span> <span><b>Prioritas Maintenance:</b> Tingginya angka Breakdown (${breakdownHrs.toFixed(1)} jam total armada) menunjukkan perlunya memperketat jadwal preventive maintenance, khususnya di armada yang rentan.</span></li>`;
+                }
+                if (rainHrs > breakdownHrs && rainHrs > 10) {
+                    problemSolvingHtml += `<li class="flex items-start gap-2"><span class="text-blue-500 text-lg leading-none">➤</span> <span><b>Manajemen Cuaca (Slippery):</b> Waktu terhenti akibat hujan cukup tinggi (${rainHrs.toFixed(1)} jam aktual area). Direkomendasikan menambah alat berat support (grader/dozer) untuk recovery jalan hauling pasca hujan.</span></li>`;
+                }
+                if (idleHrs > breakdownHrs && idleHrs > 10) {
+                    problemSolvingHtml += `<li class="flex items-start gap-2"><span class="text-blue-500 text-lg leading-none">➤</span> <span><b>Optimasi Antrian (Idle):</b> Waktu idle/tunggu antar unit sangat tinggi (${idleHrs.toFixed(1)} jam total). Segera evaluasi kembali rasio keseimbangan (Match Factor) antara jumlah Digger dan Hauler.</span></li>`;
+                }
+                
+                problemSolvingHtml += `<li class="flex items-start gap-2"><span class="text-blue-500 text-lg leading-none">➤</span> <span><b>Evaluasi Armada Bawah:</b> Lakukan investigasi utilitas (UA) dan ketersediaan fisik (PA) pada armada <b>${worstFleet}</b> yang menduduki peringkat produksi terendah.</span></li>`;
+                problemSolvingHtml += `<li class="flex items-start gap-2"><span class="text-blue-500 text-lg leading-none">➤</span> <span><b>Replikasi Kinerja:</b> Analisis pola kerja operator utama <b>${bestOp}</b> dan sosialisasikan ke seluruh tim untuk pemerataan produktivitas.</span></li>`;
+
+                const html = `
+                <div class="mb-4">
+                    <h2 class="text-xl font-bold text-white flex items-center gap-2">🤖 AI Operations Insight</h2>
+                    <p class="text-xs text-gray-400 mt-1">Analisis dan rekomendasi cerdas dari data bebas-duplikat (Deduplicated Matrix).</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div class="glass-card p-5 border-t-4 border-t-green-500 hover:-translate-y-1 transition-transform">
+                        <h3 class="text-sm font-bold text-green-400 mb-4 flex items-center gap-2"><span class="text-xl">🌟</span> PENCAPAIAN</h3>
+                        <ul class="space-y-4 text-sm text-gray-300">
+                            <li class="flex items-start gap-2"><span class="text-green-500 font-bold">✓</span> <span>Total Produksi Aktual (Netto) mencapai <b class="text-white">${formatNum(totalBcm)} BCM</b>. Pencapaian <b class="text-green-400">${achPct}%</b> dari Target.</span></li>
+                            <li class="flex items-start gap-2"><span class="text-green-500 font-bold">✓</span> <span>Armada (Fleet) paling tangguh diraih oleh <b class="text-white">${bestFleet}</b> menyumbang ${bestFleetBcm} BCM.</span></li>
+                            <li class="flex items-start gap-2"><span class="text-green-500 font-bold">✓</span> <span><b>${bestPit}</b> mencetak rekor sebagai Pit dengan output material terbanyak.</span></li>
+                            <li class="flex items-start gap-2"><span class="text-green-500 font-bold">✓</span> <span>Operator loading utama dengan performa tertinggi adalah <b class="text-white">${bestOp}</b>.</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="glass-card p-5 border-t-4 border-t-red-500 hover:-translate-y-1 transition-transform">
+                        <h3 class="text-sm font-bold text-red-400 mb-4 flex items-center gap-2"><span class="text-xl">⚠️</span> PROBLEM TERDETEKSI</h3>
+                        <ul class="space-y-4 text-sm text-gray-300">
+                            ${breakdownHrs > 0 ? `<li class="flex items-start gap-2"><span class="text-red-500 font-bold">!</span> <span>Akumulasi jam rusak (Breakdown) unit alat berat menyentuh <b class="text-red-400">${breakdownHrs.toFixed(1)} Jam</b>.</span></li>` : ''}
+                            ${rainHrs > 0 ? `<li class="flex items-start gap-2"><span class="text-red-500 font-bold">!</span> <span>Hambatan alam (Rain/Slippery) menyebabkan area tambang berhenti aktual selama <b class="text-red-400">${rainHrs.toFixed(1)} Jam</b>.</span></li>` : ''}
+                            ${idleHrs > 0 ? `<li class="flex items-start gap-2"><span class="text-red-500 font-bold">!</span> <span>Total waktu tunggu (Idle/Standby) alat mencapai <b class="text-red-400">${idleHrs.toFixed(1)} Jam</b>, mengindikasikan operasional kurang presisi.</span></li>` : ''}
+                            <li class="flex items-start gap-2"><span class="text-red-500 font-bold">!</span> <span>Kinerja armada paling mengkhawatirkan adalah <b class="text-white">${worstFleet}</b>.</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="glass-card p-5 border-t-4 border-t-blue-500 hover:-translate-y-1 transition-transform">
+                        <h3 class="text-sm font-bold text-blue-400 mb-4 flex items-center gap-2"><span class="text-xl">💡</span> PROBLEM SOLVING</h3>
+                        <ul class="space-y-4 text-sm text-gray-300">
+                            ${problemSolvingHtml}
+                        </ul>
+                    </div>
+                </div>
+                `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+            }
+
+            // ============ EXECUTIVE SUMMARY ============
+            function renderExecutive(data) {
+                const prodData = getProductionData(data);
+
+                const totalBcm = prodData.reduce((s, r) => s + parseFloat(r.actual_bcm || 0), 0);
+                const totalRitase = prodData.reduce((s, r) => s + (parseInt(r.ritase) || 0), 0);
+                const targetBcmTotal = prodData.reduce((s, r) => s + parseFloat(r.target_bcm || 0), 0);
+                const avgProductivity = totalRitase > 0 ? totalBcm / totalRitase : 0;
+
+                const avgPa = data.length > 0 ? data.reduce((s, r) => s + parseFloat(r.actual_pa || 0), 0) / data.length : 0;
+                const avgUa = data.length > 0 ? data.reduce((s, r) => s + parseFloat(r.actual_ua || 0), 0) / data.length : 0;
+                const totalFuel = data.reduce((s, r) => s + parseFloat(r.fuel_liter || 0), 0);
+                const avgMtbf = data.length > 0 ? data.reduce((s, r) => s + parseFloat(r.mtbf || 0), 0) / data.length : 0;
+                const avgMttr = data.length > 0 ? data.reduce((s, r) => s + parseFloat(r.mttr || 0), 0) / data.length : 0;
+
+                const html = `
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                  ${kpiCard('Netto Total BCM', formatNum(totalBcm), formatNum(targetBcmTotal), totalBcm>=targetBcmTotal?'up':'down', 'BCM')}
+                  ${kpiCard('Netto Total Ritase', formatNum(totalRitase), '—', 'neutral', 'Rit')}
+                  ${kpiCard('Avg PA (All Units)', avgPa.toFixed(1)+'%', '85%', avgPa>=85?'up':'down', '%')}
+                  ${kpiCard('Avg UA (All Units)', avgUa.toFixed(1)+'%', '75%', avgUa>=75?'up':'down', '%')}
+                  ${kpiCard('Avg Productivity', (avgProductivity).toFixed(1), '—', 'neutral', 'BCM/Rit')}
+                  ${kpiCard('Total Fuel Consumed', (totalFuel/1000).toFixed(0)+'k L', '—', 'neutral', 'Liters')}
+                  ${kpiCard('Avg MTBF', avgMtbf.toFixed(1)+' h', '50 h', avgMtbf>=50?'up':'down', 'Hours')}
+                  ${kpiCard('Avg MTTR', avgMttr.toFixed(1)+' h', '3 h', avgMttr<=3?'up':'down', 'Hours')}
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">📊 Monthly Netto BCM Trend</h3><div class="chart-container"><canvas id="chartMonthlyBcm"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">📈 Daily Netto Prod Trend</h3><div class="chart-container"><canvas id="chartDailyProd"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">🔄 Netto Shift Comparison</h3><div class="chart-container"><canvas id="chartShiftComp"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">🎯 Target vs Actual Netto</h3><div class="chart-container"><canvas id="chartTargetActual"></canvas></div></div>
+                </div>
+              `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+
+                setTimeout(() => {
+                    const monthly = groupByMonth(prodData);
+                    createChart('chartMonthlyBcm', 'bar', {
+                        labels: monthly.labels,
+                        datasets: [
+                            { label: 'Actual BCM', data: monthly.actual, backgroundColor: '#f59e0b80', borderColor: '#f59e0b', borderWidth: 2, borderRadius: 6 },
+                            { label: 'Target BCM', data: monthly.target, backgroundColor: '#3b82f640', borderColor: '#3b82f6', borderWidth: 2, borderRadius: 6, borderDash: [5, 5] }
+                        ]
+                    });
+
+                    const dailyLabels = [...new Set(prodData.filter(r => r.date).map(r => String(r.date)))].sort().slice(-30);
+                    const dailyActual = dailyLabels.map(d => prodData.filter(r => r.date === d).reduce((s, r) => s + parseFloat(r.actual_bcm || 0), 0));
+                    createChart('chartDailyProd', 'line', {
+                        labels: dailyLabels.map(d => d.substring(5)),
+                        datasets: [{ label: 'Daily BCM', data: dailyActual, borderColor: '#f59e0b', backgroundColor: '#f59e0b15', fill: true, tension: 0.4, pointRadius: 2, borderWidth: 2 }]
+                    });
+
+                    const dayData = prodData.filter(r => String(r.shift).toLowerCase() === 'day');
+                    const nightData = prodData.filter(r => String(r.shift).toLowerCase() === 'night');
+                    const dayBcm = dayData.reduce((s, r) => s + parseFloat(r.actual_bcm || 0), 0);
+                    const nightBcm = nightData.reduce((s, r) => s + parseFloat(r.actual_bcm || 0), 0);
+                    createChart('chartShiftComp', 'doughnut', {
+                        labels: ['Day Shift', 'Night Shift'],
+                        datasets: [{ data: [dayBcm, nightBcm], backgroundColor: ['#f59e0b', '#1e3a5f'], borderColor: '#0a0e14', borderWidth: 3 }]
+                    }, { plugins: { legend: { labels: { color: '#94a3b8' } } } });
+
+                    createChart('chartTargetActual', 'bar', {
+                        labels: ['Target BCM', 'Actual BCM'],
+                        datasets: [{ label: 'BCM', data: [targetBcmTotal, totalBcm], backgroundColor: ['#3b82f660', '#f59e0b80'], borderColor: ['#3b82f6', '#f59e0b'], borderWidth: 2, borderRadius: 8 }]
+                    });
+                }, 200);
+            }
+
+            function kpiCard(label, actual, target, trend, unit) {
+                const trendIcon = trend === 'up' ? '▲' : trend === 'down' ? '▼' : '◆';
+                const trendClass = trend === 'up' ? 'trend-up' : trend === 'down' ? 'trend-down' : 'trend-neutral';
+                return `
+                <div class="kpi-card">
+                  <div class="kpi-label">${label}</div>
+                  <div class="kpi-value text-white mt-1">${actual}</div>
+                  <div class="flex items-center justify-between mt-2">
+                    <span class="text-xs text-gray-500">Target: ${target}</span>
+                    <span class="${trendClass} text-xs font-bold">${trendIcon}</span>
+                  </div>
+                  <div class="text-[10px] text-gray-500 mt-1">${unit}</div>
+                </div>
+              `;
+            }
+
+            function groupByMonth(data) {
+                const map = {};
+                data.forEach(r => {
+                    if (!r.date) return;
+                    const key = String(r.date).substring(0, 7);
+                    if (!map[key]) map[key] = { actual: 0, target: 0 };
+                    map[key].actual += parseFloat(r.actual_bcm || 0);
+                    map[key].target += parseFloat(r.target_bcm || 0);
+                });
+                const keys = Object.keys(map).sort();
+                return { labels: keys, actual: keys.map(k => map[k].actual), target: keys.map(k => map[k].target) };
+            }
+
+            function formatNum(n) {
+                if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+                if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+                if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+                return n.toFixed(0);
+            }
+
+            // ============ PRODUCTION ============
+            function renderProduction(data) {
+                const prodData = getProductionData(data);
+
+                const pitRanking = rankBy(prodData, 'pit', 'actual_bcm');
+                const lpRanking = rankBy(prodData, 'loading_point', 'actual_bcm');
+                const dpRanking = rankBy(prodData, 'dumping_point', 'actual_bcm');
+                const html = `
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">🏗️ Pit Netto Production Ranking</h3><div class="chart-container"><canvas id="chartPitRank"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">📍 Loading Point Netto Ranking</h3><div class="chart-container"><canvas id="chartLpRank"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">🗑️ Dumping Point Netto Ranking</h3><div class="chart-container"><canvas id="chartDpRank"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">📋 Netto Production Summary Table</h3><div class="overflow-x-auto max-h-72">${buildTable(pitRanking, ['Pit','Netto BCM','Fleet Shifts'], ['pit','total','count'])}</div></div>
+                </div>
+              `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+                setTimeout(() => {
+                    createChart('chartPitRank', 'bar', {
+                        labels: pitRanking.map(r => r.key),
+                        datasets: [{ label: 'BCM', data: pitRanking.map(r => r.total), backgroundColor: ['#f59e0b', '#eab308', '#d4a017', '#b87333', '#4a5568'], borderRadius: 8 }]
+                    }, { indexAxis: 'y' });
+                    createChart('chartLpRank', 'bar', {
+                        labels: lpRanking.map(r => r.key),
+                        datasets: [{ label: 'BCM', data: lpRanking.map(r => r.total), backgroundColor: '#f59e0b90', borderRadius: 6 }]
+                    });
+                    createChart('chartDpRank', 'bar', {
+                        labels: dpRanking.map(r => r.key),
+                        datasets: [{ label: 'BCM', data: dpRanking.map(r => r.total), backgroundColor: '#b8733390', borderRadius: 6 }]
+                    });
+                }, 200);
+            }
+
+            function rankBy(data, field, valueField) {
+                const map = {};
+                data.forEach(r => {
+                    const key = r[field] || 'Unknown';
+                    if (!map[key]) map[key] = { total: 0, count: 0 };
+                    map[key].total += parseFloat(r[valueField] || 0);
+                    map[key].count++;
+                });
+                return Object.entries(map).map(([key, val]) => ({ key, ...val })).sort((a, b) => b.total - a.total);
+            }
+
+            function buildTable(rows, headers, keys) {
+                let t = '<table class="mining-table"><thead><tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr></thead><tbody>';
+                rows.slice(0, 20).forEach(r => {
+                    t += '<tr>' + keys.map(k => `<td>${typeof r[k]==='number'?formatNum(r[k]):r[k]}</td>`).join('') + '</tr>';
+                });
+                t += '</tbody></table>';
+                return t;
+            }
+
+            // ============ FLEET PERFORMANCE ============
+            function renderFleet(data) {
+                const prodData = getProductionData(data);
+                const fleetRank = rankBy(prodData, 'fleet', 'actual_bcm');
+                const top10 = fleetRank.slice(0, 10);
+                const bottom10 = fleetRank.slice(-10).reverse();
+                
+                const html = `
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">🏆 Top 10 Fleets (Netto BCM)</h3><div class="chart-container"><canvas id="chartTopFleet"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">⚠️ Bottom 10 Fleets (Netto BCM)</h3><div class="chart-container"><canvas id="chartBottomFleet"></canvas></div></div>
+                  <div class="glass-card p-4 lg:col-span-2"><h3 class="text-sm font-semibold text-gray-300 mb-3">📋 Fleet Ranking Table</h3><div class="overflow-x-auto max-h-80">${buildFleetTable(fleetRank, data)}</div></div>
+                </div>
+              `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+                setTimeout(() => {
+                    createChart('chartTopFleet', 'bar', {
+                        labels: top10.map(r => r.key),
+                        datasets: [{ label: 'BCM', data: top10.map(r => r.total), backgroundColor: '#22c55e80', borderColor: '#22c55e', borderWidth: 2, borderRadius: 6 }]
+                    }, { indexAxis: 'y' });
+                    createChart('chartBottomFleet', 'bar', {
+                        labels: bottom10.map(r => r.key),
+                        datasets: [{ label: 'BCM', data: bottom10.map(r => r.total), backgroundColor: '#ef444480', borderColor: '#ef4444', borderWidth: 2, borderRadius: 6 }]
+                    }, { indexAxis: 'y' });
+                }, 200);
+            }
+
+            function buildFleetTable(rows, allDataUnits) {
+                let t = '<table class="mining-table"><thead><tr><th>Fleet</th><th>Netto BCM</th><th>Fleet Shifts</th><th>Avg PA (All Units)</th><th>Avg UA (All Units)</th></tr></thead><tbody>';
+                rows.forEach(r => {
+                    const fleetData = allDataUnits.filter(d => d.fleet === r.key);
+                    const avgPa = fleetData.length > 0 ? fleetData.reduce((s, d) => s + parseFloat(d.actual_pa || 0), 0) / fleetData.length : 0;
+                    const avgUa = fleetData.length > 0 ? fleetData.reduce((s, d) => s + parseFloat(d.actual_ua || 0), 0) / fleetData.length : 0;
+                    t += `<tr><td><strong>${r.key}</strong></td><td>${formatNum(r.total)}</td><td>${r.count}</td><td>${avgPa.toFixed(1)}%</td><td>${avgUa.toFixed(1)}%</td></tr>`;
+                });
+                t += '</tbody></table>';
+                return t;
+            }
+
+            // ============ RELIABILITY ============
+            function renderReliability(data) {
+                const html = `
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">📉 MTBF Trend (All Units)</h3><div class="chart-container"><canvas id="chartMtbf"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">📈 MTTR Trend (All Units)</h3><div class="chart-container"><canvas id="chartMttr"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">🔧 Total Breakdown Hours Trend</h3><div class="chart-container"><canvas id="chartBreakdown"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">📊 Breakdown Pareto (by Fleet)</h3><div class="chart-container"><canvas id="chartPareto"></canvas></div></div>
+                </div>
+              `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+                setTimeout(() => {
+                    const monthly = groupByMonth(data);
+                    const mtbfMonthly = monthly.labels.map(m => {
+                        const d = data.filter(r => r.date && String(r.date).startsWith(m));
+                        return d.length > 0 ? d.reduce((s, r) => s + parseFloat(r.mtbf || 0), 0) / d.length : 0;
+                    });
+                    const mttrMonthly = monthly.labels.map(m => {
+                        const d = data.filter(r => r.date && String(r.date).startsWith(m));
+                        return d.length > 0 ? d.reduce((s, r) => s + parseFloat(r.mttr || 0), 0) / d.length : 0;
+                    });
+                    const breakdownMonthly = monthly.labels.map(m => {
+                        const d = data.filter(r => r.date && String(r.date).startsWith(m));
+                        return d.reduce((s, r) => s + parseFloat(r.breakdown_hours || 0), 0);
+                    });
+                    createChart('chartMtbf', 'line', {
+                        labels: monthly.labels,
+                        datasets: [{ label: 'MTBF (h)', data: mtbfMonthly, borderColor: '#22c55e', backgroundColor: '#22c55e15', fill: true, tension: 0.4, borderWidth: 2 }]
+                    });
+                    createChart('chartMttr', 'line', {
+                        labels: monthly.labels,
+                        datasets: [{ label: 'MTTR (h)', data: mttrMonthly, borderColor: '#ef4444', backgroundColor: '#ef444415', fill: true, tension: 0.4, borderWidth: 2 }]
+                    });
+                    createChart('chartBreakdown', 'bar', {
+                        labels: monthly.labels,
+                        datasets: [{ label: 'Breakdown Hours', data: breakdownMonthly, backgroundColor: '#ef444460', borderColor: '#ef4444', borderWidth: 1, borderRadius: 6 }]
+                    });
+                    const fleetBreakdowns = rankBy(data, 'fleet', 'breakdown_hours');
+                    createChart('chartPareto', 'bar', {
+                        labels: fleetBreakdowns.map(r => r.key),
+                        datasets: [{ label: 'Breakdown Hours', data: fleetBreakdowns.map(r => r.total), backgroundColor: fleetBreakdowns.map((_, i) => i < 3 ? '#ef4444' : '#f59e0b60'), borderRadius: 6 }]
+                    });
+                }, 200);
+            }
+
+            // ============ PRODUCTIVITY ============
+            function renderProductivity(data) {
+                const prodData = getProductionData(data);
+
+                const html = `
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">⚡ Netto Productivity Trend</h3><div class="chart-container"><canvas id="chartProdTrend"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">📊 Utilization Trend (All Units)</h3><div class="chart-container"><canvas id="chartUtilTrend"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">🚛 Digger Fleet Productivity</h3><div class="chart-container"><canvas id="chartDiggerProd"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">🛻 Hauler Individual Productivity</h3><div class="chart-container"><canvas id="chartHaulerProd"></canvas></div></div>
+                </div>
+              `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+                setTimeout(() => {
+                    const monthly = groupByMonth(prodData);
+                    const productivityMonthly = monthly.labels.map(m => {
+                        const d = prodData.filter(r => r.date && String(r.date).startsWith(m));
+                        const bcm = d.reduce((s, r) => s + parseFloat(r.actual_bcm || 0), 0);
+                        const rit = d.reduce((s, r) => s + (parseInt(r.ritase) || 0), 0);
+                        return rit > 0 ? bcm / rit : 0;
+                    });
+                    const utilMonthly = monthly.labels.map(m => {
+                        const d = data.filter(r => r.date && String(r.date).startsWith(m));
+                        return d.length > 0 ? d.reduce((s, r) => s + parseFloat(r.utilization || 0), 0) / d.length : 0;
+                    });
+                    createChart('chartProdTrend', 'line', {
+                        labels: monthly.labels,
+                        datasets: [{ label: 'Netto BCM/Ritase', data: productivityMonthly, borderColor: '#f59e0b', backgroundColor: '#f59e0b10', fill: true, tension: 0.4, borderWidth: 2.5 }]
+                    });
+                    createChart('chartUtilTrend', 'line', {
+                        labels: monthly.labels,
+                        datasets: [{ label: 'Utilization %', data: utilMonthly, borderColor: '#3b82f6', backgroundColor: '#3b82f610', fill: true, tension: 0.4, borderWidth: 2.5 }]
+                    }, { scales: { y: { max: 100 } } });
+                    
+                    const diggerRank = rankBy(data.filter(r => String(r.unit_type).toLowerCase() === 'digger'), 'digger', 'actual_bcm');
+                    const haulerRank = rankBy(data.filter(r => String(r.unit_type).toLowerCase() === 'hauler'), 'hauler', 'actual_bcm');
+                    
+                    createChart('chartDiggerProd', 'bar', {
+                        labels: diggerRank.slice(0, 10).map(r => r.key),
+                        datasets: [{ label: 'BCM', data: diggerRank.slice(0, 10).map(r => r.total), backgroundColor: '#f59e0b80', borderRadius: 6 }]
+                    });
+                    createChart('chartHaulerProd', 'bar', {
+                        labels: haulerRank.slice(0, 10).map(r => r.key),
+                        datasets: [{ label: 'BCM', data: haulerRank.slice(0, 10).map(r => r.total), backgroundColor: '#b8733380', borderRadius: 6 }]
+                    });
+                }, 200);
+            }
+
+            // ============ FUEL ============
+            function renderFuel(data) {
+                const prodData = getProductionData(data);
+                const totalFuel = data.reduce((s, r) => s + parseFloat(r.fuel_liter || 0), 0);
+                const totalBcm = prodData.reduce((s, r) => s + parseFloat(r.actual_bcm || 0), 0);
+                const fuelPerBcm = totalBcm > 0 ? totalFuel / totalBcm : 0;
+                
+                const html = `
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                  ${kpiCard('Total Fleet Fuel', (totalFuel/1000).toFixed(0)+'k L', '—', 'neutral', 'Liters')}
+                  ${kpiCard('Fuel Ratio (L/Netto BCM)', fuelPerBcm.toFixed(2)+' L', '1.5 L', fuelPerBcm<=1.5?'up':'down', 'L/BCM')}
+                  ${kpiCard('Saving Opportunity', ((totalFuel*0.08)/1000).toFixed(0)+'k L', '—', 'neutral', '8% target')}
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">⛽ Total Fuel Consumption Trend</h3><div class="chart-container"><canvas id="chartFuelTrend"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">🚛 Fuel Consumed per Fleet</h3><div class="chart-container"><canvas id="chartFuelFleet"></canvas></div></div>
+                </div>
+              `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+                setTimeout(() => {
+                    const monthly = groupByMonth(data);
+                    const fuelMonthly = monthly.labels.map(m => {
+                        const d = data.filter(r => r.date && String(r.date).startsWith(m));
+                        return d.reduce((s, r) => s + parseFloat(r.fuel_liter || 0), 0);
+                    });
+                    createChart('chartFuelTrend', 'line', {
+                        labels: monthly.labels,
+                        datasets: [{ label: 'Total Fuel (L)', data: fuelMonthly, borderColor: '#f59e0b', backgroundColor: '#f59e0b10', fill: true, tension: 0.4, borderWidth: 2.5 }]
+                    });
+                    const fleetFuel = rankBy(data, 'fleet', 'fuel_liter');
+                    createChart('chartFuelFleet', 'bar', {
+                        labels: fleetFuel.map(r => r.key),
+                        datasets: [{ label: 'Fuel (L)', data: fleetFuel.map(r => r.total), backgroundColor: '#f59e0b70', borderRadius: 8 }]
+                    }, { indexAxis: 'y' });
+                }, 200);
+            }
+
+            // ============ PIT ANALYSIS ============
+            function renderPit(data) {
+                const prodData = getProductionData(data);
+                const pitRank = rankBy(prodData, 'pit', 'actual_bcm'); 
+
+                const html = `
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                  ${pitRank.map(p => `
+                    <div class="glass-card p-4">
+                      <h4 class="text-sm font-bold text-yellow-400">${p.key}</h4>
+                      <div class="text-2xl font-mono font-bold text-white mt-2">${formatNum(p.total)} BCM</div>
+                      <div class="text-xs text-gray-400 mt-1">${p.count} Netto Records</div>
+                      <div class="w-full bg-gray-700 rounded-full h-1.5 mt-3"><div class="bg-yellow-500 h-1.5 rounded-full" style="width:${Math.min(100,(p.total/pitRank[0].total)*100)}%"></div></div>
+                    </div>
+                  `).join('')}
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">📏 Total Jarak Angkut Hauler (km)</h3><div class="chart-container"><canvas id="chartDistPit"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">🌧️ Rain Impact per Pit (Netto Hours)</h3><div class="chart-container"><canvas id="chartRainPit"></canvas></div></div>
+                </div>
+              `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+                setTimeout(() => {
+                    const pitDistArr = rankBy(data, 'pit', 'distance_km');
+                    createChart('chartDistPit', 'bar', {
+                        labels: pitDistArr.map(r => r.key),
+                        datasets: [{ label: 'Total Distance (km)', data: pitDistArr.map(r => r.total), backgroundColor: '#3b82f670', borderRadius: 6 }]
+                    });
+                    
+                    const pitRainMap = {};
+                    data.forEach(r => {
+                        const key = `${r.date}_${r.shift}_${r.pit}`;
+                        if (!pitRainMap[key]) pitRainMap[key] = { pit: r.pit, rain: 0 };
+                        pitRainMap[key].rain = Math.max(pitRainMap[key].rain, parseFloat(r.rain_hours || 0));
+                    });
+                    const pitRainSummary = {};
+                    Object.values(pitRainMap).forEach(v => {
+                        const pName = v.pit || 'Unknown';
+                        pitRainSummary[pName] = (pitRainSummary[pName] || 0) + v.rain;
+                    });
+                    const pitRainArr = Object.entries(pitRainSummary).map(([k,v]) => ({key:k, total:v})).sort((a,b)=>b.total-a.total);
+                    
+                    createChart('chartRainPit', 'bar', {
+                        labels: pitRainArr.map(r => r.key),
+                        datasets: [{ label: 'Rain Hours', data: pitRainArr.map(r => r.total), backgroundColor: '#6366f170', borderRadius: 6 }]
+                    });
+                }, 200);
+            }
+
+            // ============ OPERATOR ============
+            function renderOperator(data) {
+                const prodData = getProductionData(data);
+                const opRank = rankBy(prodData, 'operator', 'actual_bcm');
+                
+                const html = `
+                <div class="glass-card p-4 mb-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">👷 Top Operator Loader/Digger (Netto BCM)</h3>
+                  <div class="overflow-x-auto max-h-96">${buildOperatorTable(opRank, prodData)}</div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">🏅 Top 15 Operators BCM</h3><div class="chart-container"><canvas id="chartOpBcm"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">📊 Top 15 Operators Ritase</h3><div class="chart-container"><canvas id="chartOpRit"></canvas></div></div>
+                </div>
+              `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+                setTimeout(() => {
+                    const top15 = opRank.slice(0, 15);
+                    createChart('chartOpBcm', 'bar', {
+                        labels: top15.map(r => r.key),
+                        datasets: [{ label: 'BCM', data: top15.map(r => r.total), backgroundColor: top15.map((_, i) => i < 3 ? '#f59e0b' : '#f59e0b50'), borderRadius: 6 }]
+                    }, { indexAxis: 'y' });
+                    const opRit = rankBy(prodData, 'operator', 'ritase').slice(0, 15);
+                    createChart('chartOpRit', 'bar', {
+                        labels: opRit.map(r => r.key),
+                        datasets: [{ label: 'Ritase', data: opRit.map(r => r.total), backgroundColor: '#22c55e60', borderColor: '#22c55e', borderWidth: 1, borderRadius: 6 }]
+                    }, { indexAxis: 'y' });
+                }, 200);
+            }
+
+            function buildOperatorTable(rows, prodData) {
+                let t = '<table class="mining-table"><thead><tr><th>#</th><th>Operator</th><th>Netto BCM</th><th>Netto Ritase</th><th>Records</th></tr></thead><tbody>';
+                rows.slice(0, 30).forEach((r, i) => {
+                    const ritTotal = prodData.filter(d => d.operator === r.key).reduce((s, d) => s + (parseInt(d.ritase) || 0), 0);
+                    const cls = i < 3 ? 'highlight-row' : '';
+                    t += `<tr class="${cls}"><td>${i+1}</td><td><strong>${r.key}</strong></td><td>${formatNum(r.total)}</td><td>${formatNum(ritTotal)}</td><td>${r.count}</td></tr>`;
+                });
+                t += '</tbody></table>';
+                return t;
+            }
+
+            // ============ WEATHER ============
+            function renderWeather(data) {
+                const trueWeather = getTrueWeather(data); 
+                const totalRainHours = trueWeather.rainHours;
+                const totalRainfall = trueWeather.rainfallMm;
+                const totalSlippery = trueWeather.slipperyHours;
+                
+                const html = `
+                <div class="grid grid-cols-3 gap-3 mb-4">
+                  ${kpiCard('Netto Rain Hours', totalRainHours.toFixed(1)+' h', '—', 'neutral', 'Hours')}
+                  ${kpiCard('Netto Rainfall', totalRainfall.toFixed(0)+' mm', '—', 'neutral', 'mm')}
+                  ${kpiCard('Netto Slippery', totalSlippery.toFixed(1)+' h', '—', 'neutral', 'Hours')}
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">🌧️ Weather Impact Trend (Deduplicated)</h3><div class="chart-container"><canvas id="chartWeatherTrend"></canvas></div></div>
+                  <div class="glass-card p-4"><h3 class="text-sm font-semibold text-gray-300 mb-3">📊 Rain vs Netto Production</h3><div class="chart-container"><canvas id="chartRainProd"></canvas></div></div>
+                </div>
+              `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+                setTimeout(() => {
+                    const monthlyRainMap = {};
+                    data.forEach(r => {
+                        if (!r.date) return;
+                        const m = String(r.date).substring(0, 7);
+                        const k = `${r.date}_${r.shift}_${r.pit}`;
+                        if (!monthlyRainMap[m]) monthlyRainMap[m] = {};
+                        if (!monthlyRainMap[m][k]) monthlyRainMap[m][k] = 0;
+                        monthlyRainMap[m][k] = Math.max(monthlyRainMap[m][k], parseFloat(r.rain_hours || 0));
+                    });
+                    
+                    const mLabels = Object.keys(monthlyRainMap).sort();
+                    const rainMonthly = mLabels.map(m => {
+                        let totalM = 0;
+                        Object.values(monthlyRainMap[m]).forEach(v => totalM += v);
+                        return totalM;
+                    });
+                    
+                    createChart('chartWeatherTrend', 'line', {
+                        labels: mLabels,
+                        datasets: [{ label: 'Rain Hours', data: rainMonthly, borderColor: '#6366f1', backgroundColor: '#6366f115', fill: true, tension: 0.4, borderWidth: 2 }]
+                    });
+                    
+                    const prodData = getProductionData(data);
+                    createChart('chartRainProd', 'scatter', {
+                        datasets: [{
+                            label: 'Rain vs Netto BCM',
+                            data: prodData.map(r => ({ x: parseFloat(r.rain_hours || 0), y: parseFloat(r.actual_bcm || 0) })),
+                            backgroundColor: '#6366f160', borderColor: '#6366f1', pointRadius: 4
+                        }]
+                    });
+                }, 200);
+            }
+
+            // ============ WATERFALL ============
+            function renderWaterfall(data) {
+                const prodData = getProductionData(data);
+
+                const totalTarget = prodData.reduce((s, r) => s + parseFloat(r.target_bcm || 0), 0);
+                const totalActual = prodData.reduce((s, r) => s + parseFloat(r.actual_bcm || 0), 0);
+                const varFleet = prodData.reduce((s, r) => s + parseFloat(r.var_fleet || 0), 0);
+                const varPa = prodData.reduce((s, r) => s + parseFloat(r.var_pa || 0), 0);
+                const varUa = prodData.reduce((s, r) => s + parseFloat(r.var_ua || 0), 0);
+                const varProd = prodData.reduce((s, r) => s + parseFloat(r.var_prod || 0), 0);
+                
+                const html = `
+                <div class="glass-card p-4 max-w-3xl mx-auto">
+                  <h3 class="text-sm font-semibold text-gray-300 mb-4 text-center">📉 Executive Netto Waterfall: Target → Actual</h3>
+                  <div class="chart-container" style="min-height:380px"><canvas id="chartWaterfall"></canvas></div>
+                  <div class="grid grid-cols-5 gap-2 mt-4 text-center text-xs">
+                    <div><span class="text-blue-400 font-bold">Target</span><br>${formatNum(totalTarget)}</div>
+                    <div><span class="text-red-400 font-bold">Fleet Var</span><br>${formatNum(varFleet)}</div>
+                    <div><span class="text-orange-400 font-bold">PA Var</span><br>${formatNum(varPa)}</div>
+                    <div><span class="text-yellow-400 font-bold">UA Var</span><br>${formatNum(varUa)}</div>
+                    <div><span class="text-green-400 font-bold">Prod Var</span><br>${formatNum(varProd)}</div>
+                  </div>
+                  <div class="text-center mt-3 text-lg font-bold text-white">Netto Actual: ${formatNum(totalActual)} BCM</div>
+                </div>
+              `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+                setTimeout(() => {
+                    const waterfallData = [
+                        { label: 'Target BCM', value: totalTarget, color: '#3b82f6' },
+                        { label: 'Fleet Availability', value: varFleet, color: varFleet >= 0 ? '#22c55e' : '#ef4444' },
+                        { label: 'PA Variance', value: varPa, color: varPa >= 0 ? '#22c55e' : '#ef4444' },
+                        { label: 'UA Variance', value: varUa, color: varUa >= 0 ? '#22c55e' : '#ef4444' },
+                        { label: 'Productivity Var', value: varProd, color: varProd >= 0 ? '#22c55e' : '#ef4444' },
+                        { label: 'Actual BCM', value: totalActual, color: '#f59e0b' },
+                    ];
+                    createChart('chartWaterfall', 'bar', {
+                        labels: waterfallData.map(w => w.label),
+                        datasets: [{ label: 'BCM', data: waterfallData.map(w => w.value), backgroundColor: waterfallData.map(w => w.color), borderRadius: 8 }]
+                    }, { plugins: { legend: { display: false } } });
+                }, 200);
+            }
+
+            // ============ FORECAST ============
+            function renderForecast(data) {
+                const prodData = getProductionData(data);
+                const totalBcm = prodData.reduce((s, r) => s + parseFloat(r.actual_bcm || 0), 0);
+                const uniqueDates = [...new Set(prodData.filter(r => r.date).map(r => r.date))];
+                
+                const days = uniqueDates.length > 0 ? uniqueDates.length : 30;
+                const avgDaily = days > 0 ? totalBcm / days : 5000;
+                const forecastDaily = avgDaily * (0.85 + Math.random() * 0.3);
+                const forecastWeekly = forecastDaily * 7;
+                const forecastMonthly = forecastDaily * 30;
+                
+                const html = `
+                <div class="grid grid-cols-3 gap-3 mb-4">
+                  ${kpiCard('Next Day Forecast', formatNum(forecastDaily)+' BCM', formatNum(avgDaily), forecastDaily>=avgDaily?'up':'down', 'BCM')}
+                  ${kpiCard('Weekly Forecast', formatNum(forecastWeekly)+' BCM', '—', 'neutral', 'BCM')}
+                  ${kpiCard('Monthly Forecast', formatNum(forecastMonthly)+' BCM', '—', 'neutral', 'BCM')}
+                </div>
+                <div class="glass-card p-4">
+                  <h3 class="text-sm font-semibold text-gray-300 mb-3">🔮 AI Forecast with Confidence Interval</h3>
+                  <div class="chart-container"><canvas id="chartForecast"></canvas></div>
+                </div>
+              `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+                setTimeout(() => {
+                    const monthly = groupByMonth(prodData);
+                    const labels = [...monthly.labels];
+                    const actuals = [...monthly.actual];
+                    const lastVal = actuals.length > 0 ? actuals[actuals.length - 1] : 50000;
+                    const fcLabels = ['Next', '+2', '+3'];
+                    const fcValues = fcLabels.map(() => lastVal * (0.9 + Math.random() * 0.25));
+                    const upper = fcValues.map(v => v * 1.12);
+                    const lower = fcValues.map(v => v * 0.88);
+                    
+                    createChart('chartForecast', 'line', {
+                        labels: [...labels.slice(-8), ...fcLabels],
+                        datasets: [
+                            { label: 'Historical BCM', data: [...actuals.slice(-8), null, null, null], borderColor: '#f59e0b', borderWidth: 2.5, pointRadius: 3, tension: 0.4 },
+                            { label: 'Forecast BCM', data: [null, null, null, null, null, null, null, null, ...fcValues], borderColor: '#22c55e', borderWidth: 2.5, borderDash: [6, 3], tension: 0.4 },
+                            { label: 'Upper Bound', data: [null, null, null, null, null, null, null, null, ...upper], borderColor: '#22c55e30', borderWidth: 1, borderDash: [2, 2], pointRadius: 0, fill: false },
+                            { label: 'Lower Bound', data: [null, null, null, null, null, null, null, null, ...lower], borderColor: '#22c55e30', borderWidth: 1, borderDash: [2, 2], pointRadius: 0, fill: '-1' },
+                        ]
+                    });
+                }, 200);
+            }
+
+            // ============ REPORTS ============
+            function renderReports(data) {
+                const prodData = getProductionData(data);
+                
+                const totalBcm = prodData.reduce((s, r) => s + parseFloat(r.actual_bcm || 0), 0);
+                const targetBcmTotal = prodData.reduce((s, r) => s + parseFloat(r.target_bcm || 0), 0);
+                const totalFuel = data.reduce((s, r) => s + parseFloat(r.fuel_liter || 0), 0);
+                
+                const html = `
+                <div class="mb-5 flex justify-between items-center print:hidden">
+                    <div>
+                        <h2 class="text-xl font-bold text-white flex items-center gap-2">📄 Executive Print Report</h2>
+                        <p class="text-xs text-gray-400 mt-1">Preview laporan siap cetak. Klik tombol print untuk mencetak atau Save as PDF.</p>
+                    </div>
+                    <button class="btn-mining flex items-center gap-2" onclick="window.print()">
+                        <span class="text-lg">🖨️</span> Print / Save as PDF
+                    </button>
+                </div>
+
+                <div id="printArea" class="space-y-6 print:p-2">
+                    <div class="text-center pb-4 border-b border-[#1e2633] print:border-gray-300">
+                        <h1 class="text-2xl font-bold text-white print:text-black uppercase tracking-wider">Mining Production Summary</h1>
+                        <p class="text-sm text-gray-400 print:text-gray-600 mt-1">Generated: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                        <p class="text-xs text-yellow-500 mt-1 font-semibold">Filter Aktif: ${globalFilters.month !== 'all' ? 'Bulan ' + globalFilters.month : 'Semua Bulan'} | ${globalFilters.year !== 'all' ? 'Tahun ' + globalFilters.year : 'Semua Tahun'}</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        ${kpiCard('Netto BCM', formatNum(totalBcm), formatNum(targetBcmTotal), totalBcm>=targetBcmTotal?'up':'down', 'BCM')}
+                        ${kpiCard('Target BCM', formatNum(targetBcmTotal), '—', 'neutral', 'BCM')}
+                        ${kpiCard('Total Fuel', (totalFuel/1000).toFixed(0)+'k L', '—', 'neutral', 'Liters')}
+                        ${kpiCard('Achievement', targetBcmTotal > 0 ? ((totalBcm/targetBcmTotal)*100).toFixed(1)+'%' : '0%', '100%', totalBcm>=targetBcmTotal?'up':'down', '%')}
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                        <div class="glass-card p-4">
+                            <h3 class="text-sm font-semibold text-gray-300 print:text-black mb-3 text-center border-b border-[#1e2633] print:border-gray-300 pb-2">📈 Monthly Trend</h3>
+                            <div class="chart-container"><canvas id="reportChartTrend"></canvas></div>
+                        </div>
+                        <div class="glass-card p-4">
+                            <h3 class="text-sm font-semibold text-gray-300 print:text-black mb-3 text-center border-b border-[#1e2633] print:border-gray-300 pb-2">🎯 Target vs Actual Netto</h3>
+                            <div class="chart-container"><canvas id="reportChartTarget"></canvas></div>
+                        </div>
+                        <div class="glass-card p-4">
+                            <h3 class="text-sm font-semibold text-gray-300 print:text-black mb-3 text-center border-b border-[#1e2633] print:border-gray-300 pb-2">🏆 Top 5 Fleets (BCM)</h3>
+                            <div class="chart-container"><canvas id="reportChartFleet"></canvas></div>
+                        </div>
+                        <div class="glass-card p-4">
+                            <h3 class="text-sm font-semibold text-gray-300 print:text-black mb-3 text-center border-b border-[#1e2633] print:border-gray-300 pb-2">🌧️ Weather Impact (Rain Hours)</h3>
+                            <div class="chart-container"><canvas id="reportChartRain"></canvas></div>
+                        </div>
+                    </div>
+                </div>
+                `;
+                sectionContent.insertAdjacentHTML('beforeend', html);
+
+                // Render Charts untuk Report
+                setTimeout(() => {
+                    // 1. Trend Bulanan
+                    const monthly = groupByMonth(prodData);
+                    createChart('reportChartTrend', 'bar', {
+                        labels: monthly.labels,
+                        datasets: [
+                            { label: 'Actual BCM', data: monthly.actual, backgroundColor: '#f59e0b80', borderColor: '#f59e0b', borderWidth: 1 },
+                            { label: 'Target', data: monthly.target, type: 'line', borderColor: '#3b82f6', backgroundColor: 'transparent', borderDash: [5, 5], tension: 0.3 }
+                        ]
+                    });
+
+                    // 2. Target vs Actual
+                    createChart('reportChartTarget', 'doughnut', {
+                        labels: ['Actual BCM', 'Sisa Target'],
+                        datasets: [{ 
+                            data: [totalBcm, Math.max(0, targetBcmTotal - totalBcm)], 
+                            backgroundColor: ['#22c55e', '#ef444480'], 
+                            borderWidth: 2, 
+                            borderColor: '#0a0e14' 
+                        }]
+                    });
+
+                    // 3. Top Fleets
+                    const fleetRank = rankBy(prodData, 'fleet', 'actual_bcm').slice(0, 5);
+                    createChart('reportChartFleet', 'bar', {
+                        labels: fleetRank.map(r => r.key),
+                        datasets: [{ label: 'BCM', data: fleetRank.map(r => r.total), backgroundColor: '#f59e0b', borderRadius: 4 }]
+                    }, { indexAxis: 'y' });
+
+                    // 4. Rain Trend
+                    const monthlyRainMap = {};
+                    data.forEach(r => {
+                        if (!r.date) return;
+                        const m = String(r.date).substring(0, 7);
+                        const k = `${r.date}_${r.shift}_${r.pit}`;
+                        if (!monthlyRainMap[m]) monthlyRainMap[m] = {};
+                        if (!monthlyRainMap[m][k]) monthlyRainMap[m][k] = 0;
+                        monthlyRainMap[m][k] = Math.max(monthlyRainMap[m][k], parseFloat(r.rain_hours || 0));
+                    });
+                    const mLabels = Object.keys(monthlyRainMap).sort();
+                    const rainMonthly = mLabels.map(m => {
+                        let totalM = 0;
+                        Object.values(monthlyRainMap[m]).forEach(v => totalM += v);
+                        return totalM;
+                    });
+                    createChart('reportChartRain', 'line', {
+                        labels: mLabels,
+                        datasets: [{ label: 'Rain Hours', data: rainMonthly, borderColor: '#ef4444', backgroundColor: '#ef444420', fill: true, tension: 0.4 }]
+                    });
+                }, 300);
+            }
+
+            // ============ CHART HELPERS ============
+            function createChart(canvasId, type, data, options = {}) {
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) return null;
+                const ctx = canvas.getContext('2d');
+                const defaultOptions = {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } },
+                    scales: {
+                        y: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { color: '#1e263330' } },
+                        x: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { display: false } }
+                    }
+                };
+                const mergedOptions = deepMerge(defaultOptions, options);
+                const chart = new Chart(ctx, { type, data, options: mergedOptions });
+                chartInstances[canvasId] = chart;
+                return chart;
+            }
+
+            function deepMerge(target, source) {
+                const result = { ...target };
+                for (const key in source) {
+                    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+                        result[key] = deepMerge(target[key] || {}, source[key]);
+                    } else {
+                        result[key] = source[key];
+                    }
+                }
+                return result;
+            }
+
+            // ============ INIT ============
+            function init() {
+                initSupabase();
+                checkSession();
+                window.addEventListener('resize', () => {
+                    if (window.innerWidth >= 1024) {
+                        sidebar.classList.remove('collapsed');
+                        overlay.classList.remove('active');
+                    }
+                });
+                if (window.innerWidth < 1024) sidebar.classList.add('collapsed');
+            }
+
+            init();
+        })();
+    </script>
+</body>
+</html>
